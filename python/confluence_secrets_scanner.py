@@ -1,18 +1,18 @@
 import os
 import re
 import requests
+from requests.auth import HTTPBasicAuth
 
 confluence_url = 'https://your-confluence-instance.com'
-access_token = os.getenv('CONFLUENCE_ACCESS_TOKEN')
+username = os.getenv('CONFLUENCE_USERNAME')
+api_token = os.getenv('CONFLUENCE_API_TOKEN')
 
-if access_token is None:
-    print("Error: Please set the CONFLUENCE_ACCESS_TOKEN environment variable.")
+if username is None or api_token is None:
+    print("Error: Please set the CONFLUENCE_USERNAME and CONFLUENCE_API_TOKEN environment variables.")
     exit(1)
 
-headers = {
-    'Authorization': f'Bearer {access_token}',
-    'Content-Type': 'application/json'
-}
+auth = HTTPBasicAuth(username, api_token)
+headers = {'Content-Type': 'application/json'}
 
 patterns = [
     r'[a-zA-Z0-9_\-]{32}',
