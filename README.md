@@ -20,8 +20,8 @@ python python/scanner.py
 
 ### Golang
 
-1. Set the CONFLUENCE_ACCESS_TOKEN environment variable with your Confluence personal access token.
-2. Replace https://your-confluence-instance.com in main.go with your Confluence instance URL.
+1. Set the `CONFLUENCE_ACCESS_TOKEN` environment variable with your Confluence personal access token.
+2. Replace `https://your-confluence-instance.com` in `main.go` with your Confluence instance URL.
 3. Build the Go binary:
 ```bash
 go build -o golang/scanner golang/main.go
