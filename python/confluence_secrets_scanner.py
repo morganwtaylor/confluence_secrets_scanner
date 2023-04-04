@@ -1,95 +1,99 @@
-import requests
-import re
 import os
+import re
+import requests
 
-# Replace with your Confluence instance URL
 confluence_url = 'https://your-confluence-instance.com'
+access_token = os.getenv('CONFLUENCE_ACCESS_TOKEN')
 
-# Authenticate with Confluence using a personal access token
-access_token = os.environ['CONFLUENCE_ACCESS_TOKEN']
+if access_token is None:
+    print("Error: Please set the CONFLUENCE_ACCESS_TOKEN environment variable.")
+    exit(1)
+
 headers = {
-    'Authorization': f'Bearer {access_token}'
+    'Authorization': f'Bearer {access_token}',
+    'Content-Type': 'application/json'
 }
 
-# Search patterns for secrets, API keys, and passwords
 patterns = [
-    r'[a-zA-Z0-9]{32}',  # 32-character alphanumeric strings, e.g., API keys
-    r'(?i)password\s*[:=]\s*[a-zA-Z0-9!@#$%^&*()_+-=]{6,}',  # Passwords
-    r'Bearer\s+[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+',  # JWT tokens
-    # Add more patterns as needed
+    r'[a-zA-Z0-9_\-]{32}',
+    r'[a-zA-Z0-9_\-]{40}',
+    r'[a-zA-Z0-9_\-]{64}',
 ]
 
 
-# Function to search for sensitive data in a page
-def search_page(page_id):
-    response = requests.get(f"{confluence_url}/rest/api/content/{page_id}?expand=body.storage", headers=headers)
-    response.raise_for_status()
-    page = response.json()
+def get_all_spaces():
+    url = f'{confluence_url}/rest/api/space'
+    response = requests.get(url, headers=headers)
 
-    content = page['body']['storage']['value']
-    title = page['title']
+    if response.status_code != 200:
+        print(f"Error: Unable to fetch spaces (Status code: {response.status_code})")
+        exit(1)
+
+    try:
+        spaces_data = response.json()
+    except requests.exceptions.JSONDecodeError:
+        print("Error: Invalid JSON response when fetching spaces.")
+        exit(1)
+
+    return [space['key'] for space in spaces_data['results']]
+
+
+def get_all_pages(space_key):
+    url = f'{confluence_url}/rest/api/content/search'
+    query = f'space={space_key} and type=page'
+    params = {'cql': query}
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code != 200:
+        print(f"Error: Unable to fetch pages for space {space_key} (Status code: {response.status_code})")
+        return []
+
+    try:
+        pages_data = response.json()
+    except requests.exceptions.JSONDecodeError:
+        print(f"Error: Invalid JSON response when fetching pages for space {space_key}.")
+        return []
+
+    return pages_data['results']
+
+
+def search_page(page):
+    url = f'{confluence_url}/rest/api/content/{page["id"]}?expand=body.storage'
+    response = requests.get(url, headers=headers)
+
+    if response.status_code != 200:
+        print(f"Error: Unable to fetch page {page['title']} (ID: {page['id']}) (Status code: {response.status_code})")
+        return
+
+    try:
+        page_data = response.json()
+    except requests.exceptions.JSONDecodeError:
+        print(f"Error: Invalid JSON response when fetching page {page['title']} (ID: {page['id']}).")
+        return
+
+    content = page_data['body']['storage']['value']
 
     found_secrets = []
 
     for pattern in patterns:
-        matches = re.findall(pattern, content)
-        if matches:
-            found_secrets.extend(matches)
+        secrets = re.findall(pattern, content)
+        if secrets:
+            found_secrets.extend(secrets)
 
     if found_secrets:
-        print(f'Secrets found in "{title}" (Page ID: {page_id}):')
+        print(f"Secrets found in \"{page['title']}\" (ID: {page['id']}):")
         for secret in found_secrets:
-            print(f'  - {secret}')
+            print(f"  - {secret}")
 
 
-# Function to search for sensitive data in a space
-def search_space(space_key):
-    start = 0
-    limit = 25
-    has_more = True
+def main():
+    space_keys = get_all_spaces()
 
-    while has_more:
-        response = requests.get(
-            f"{confluence_url}/rest/api/content/search?cql=space={space_key}&start={start}&limit={limit}&expand=id",
-            headers=headers)
-        response.raise_for_status()
-        results = response.json()
-
-        for page in results['results']:
-            search_page(page['id'])
-
-        has_more = results['size'] == limit
-        start += limit
+    for space_key in space_keys:
+        pages = get_all_pages(space_key)
+        for page in pages:
+            search_page(page)
 
 
-# Function to get all spaces
-def get_all_spaces():
-    start = 0
-    limit = 25
-    spaces = []
-
-    while True:
-        response = requests.get(f"{confluence_url}/rest/api/space?start={start}&limit={limit}", headers=headers)
-        response.raise_for_status()
-        results = response.json()
-
-        spaces.extend(results['results'])
-
-        if results['size'] < limit:
-            break
-
-        start += limit
-
-    return spaces
-
-
-# Search for secrets in all Confluence spaces
-print('Searching for secrets in all Confluence spaces...')
-spaces = get_all_spaces()
-
-for space in spaces:
-    space_key = space['key']
-    print(f'Searching for secrets in space "{space_key}"...')
-    search_space(space_key)
-
-print('Finished searching for secrets.')
+if __name__ == "__main__":
+    main()
